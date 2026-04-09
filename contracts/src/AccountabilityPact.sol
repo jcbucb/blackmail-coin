@@ -101,11 +101,14 @@ contract AccountabilityPact {
         Pact storage pact = pacts[pactId];
         require(pact.creator != address(0), "Pact does not exist");
         require(pact.status == PactStatus.Active, "Pact not active");
-        require(block.timestamp >= pact.deadline, "Deadline not reached");
+
+        bool goalMet = actualValue >= pact.targetValue;
+
+        // Can resolve early only if goal is met; penalty requires deadline to pass
+        require(goalMet || block.timestamp >= pact.deadline, "Deadline not reached");
 
         pact.status = PactStatus.Resolved;
 
-        bool goalMet = actualValue >= pact.targetValue;
         address recipient = goalMet ? pact.creator : pact.penaltyRecipient;
 
         require(USDC.transfer(recipient, pact.stakeAmount), "USDC transfer failed");

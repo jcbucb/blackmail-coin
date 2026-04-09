@@ -150,11 +150,6 @@ app.post('/api/pacts/:pactId/verify', async (req, res) => {
       return res.status(400).json({ error: 'Pact is not active' })
     }
 
-    const now = Math.floor(Date.now() / 1000)
-    if (pact.deadline > now) {
-      return res.status(400).json({ error: 'Deadline has not passed yet' })
-    }
-
     const connection = getConnection(pact.creator)
     if (!connection) {
       return res.status(400).json({ error: 'No Strava connection for pact creator' })
@@ -167,13 +162,21 @@ app.post('/api/pacts/:pactId/verify', async (req, res) => {
       pact.createdAt
     )
 
+    const goalMet = actual >= Number(pact.targetValue)
+    const now = Math.floor(Date.now() / 1000)
+
+    // Early resolution only allowed if goal is met; penalty requires deadline
+    if (!goalMet && pact.deadline > now) {
+      return res.status(400).json({ error: 'Deadline has not passed and goal not yet met' })
+    }
+
     const receipt = await submitResolve(pactId, actual)
 
     res.json({
       success: true,
       pactId,
       actualValue: actual,
-      goalMet: actual >= Number(pact.targetValue),
+      goalMet,
       txHash: receipt.hash,
     })
   } catch (err) {

@@ -241,13 +241,27 @@ contract AccountabilityPactTest is Test {
         pact.resolve(id, TARGET);
     }
 
-    function test_resolve_revert_deadlineNotReached() public {
+    function test_resolve_revert_deadlineNotReached_goalNotMet() public {
         vm.prank(creator);
         uint256 id = pact.createPact(GOAL_TYPE, TARGET, deadline, STAKE, penaltyRecipient);
 
+        // Can't penalize before deadline
         vm.prank(oracle);
         vm.expectRevert("Deadline not reached");
+        pact.resolve(id, TARGET - 1);
+    }
+
+    function test_resolve_earlyIfGoalMet() public {
+        vm.prank(creator);
+        uint256 id = pact.createPact(GOAL_TYPE, TARGET, deadline, STAKE, penaltyRecipient);
+
+        // Can resolve early if goal is met
+        vm.prank(oracle);
         pact.resolve(id, TARGET);
+
+        (,,,,,,AccountabilityPact.PactStatus status,) = pact.pacts(id);
+        assertEq(uint8(status), uint8(AccountabilityPact.PactStatus.Resolved));
+        assertEq(usdc.balanceOf(creator), 1000e6);
     }
 
     function test_resolve_revert_alreadyResolved() public {

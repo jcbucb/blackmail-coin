@@ -3,7 +3,7 @@
 export const dynamic = 'force-dynamic'
 
 import { useState, useEffect, useMemo, Suspense } from 'react'
-import { useAccount } from 'wagmi'
+import { useAccount, useReadContract } from 'wagmi'
 import { ConnectWallet } from '@coinbase/onchainkit/wallet'
 import {
   Transaction,
@@ -50,6 +50,16 @@ function CreatePageInner() {
   const [checkingStrava, setCheckingStrava] = useState(false)
   const [createdPactId, setCreatedPactId] = useState<number | null>(null)
   const [txError, setTxError] = useState<string | null>(null)
+  const [approved, setApproved] = useState(false)
+
+  // Check on-chain allowance so Step 2 shows even after page refresh
+  const { data: allowance } = useReadContract({
+    address: USDC_ADDRESS,
+    abi: ERC20_ABI,
+    functionName: 'allowance',
+    args: address ? [address, CONTRACT_ADDRESS] : undefined,
+    query: { enabled: !!address },
+  })
   const [form, setForm] = useState<FormState>({
     goalType: GoalType.RunCount,
     targetInput: '',
@@ -85,14 +95,16 @@ function CreatePageInner() {
     ? BigInt(Math.floor(new Date(form.deadlineDate).getTime() / 1000))
     : 0n
 
-  // Always approve + create — OnchainKit sequences them
-  const contracts = useMemo(() => [
+  const approveCalls = useMemo(() => [
     {
       address: USDC_ADDRESS,
       abi: ERC20_ABI,
       functionName: 'approve' as const,
       args: [CONTRACT_ADDRESS, stakeAmount] as const,
     },
+  ], [stakeAmount])
+
+  const createCalls = useMemo(() => [
     {
       address: CONTRACT_ADDRESS,
       abi: PACT_ABI,
@@ -105,7 +117,7 @@ function CreatePageInner() {
         form.penaltyRecipient as `0x${string}`,
       ] as const,
     },
-  ], [stakeAmount, form.goalType, targetValue, deadlineTimestamp, form.penaltyRecipient])
+  ], [form.goalType, targetValue, deadlineTimestamp, stakeAmount, form.penaltyRecipient])
 
   function handleConnectStrava() {
     if (!address) return
@@ -412,21 +424,39 @@ function CreatePageInner() {
               Back
             </button>
             <div className="flex-1">
-              <Transaction
-                chainId={baseSepolia.id}
-                calls={contracts}
-                onSuccess={handleSuccess}
-                onError={(e) => setTxError(e.message)}
-              >
-                <TransactionButton
-                  text="Approve & Create Pact"
-                  className="w-full py-3 bg-black text-white font-medium rounded-xl hover:bg-gray-800 transition-colors"
-                />
-                <TransactionStatus>
-                  <TransactionStatusLabel />
-                  <TransactionStatusAction />
-                </TransactionStatus>
-              </Transaction>
+              {!approved && !(allowance && allowance >= stakeAmount) ? (
+                <Transaction
+                  chainId={baseSepolia.id}
+                  calls={approveCalls}
+                  onSuccess={() => setApproved(true)}
+                  onError={(e) => setTxError(e.message)}
+                >
+                  <TransactionButton
+                    text="Step 1: Approve USDC"
+                    className="w-full py-3 bg-black text-white font-medium rounded-xl hover:bg-gray-800 transition-colors"
+                  />
+                  <TransactionStatus>
+                    <TransactionStatusLabel />
+                    <TransactionStatusAction />
+                  </TransactionStatus>
+                </Transaction>
+              ) : (
+                <Transaction
+                  chainId={baseSepolia.id}
+                  calls={createCalls}
+                  onSuccess={handleSuccess}
+                  onError={(e) => setTxError(e.message)}
+                >
+                  <TransactionButton
+                    text="Step 2: Create Pact"
+                    className="w-full py-3 bg-black text-white font-medium rounded-xl hover:bg-gray-800 transition-colors"
+                  />
+                  <TransactionStatus>
+                    <TransactionStatusLabel />
+                    <TransactionStatusAction />
+                  </TransactionStatus>
+                </Transaction>
+              )}
             </div>
           </div>
         </div>
